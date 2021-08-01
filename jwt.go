@@ -16,10 +16,15 @@ var (
 	tokensRWMutex sync.RWMutex
 	tokens map[string]time.Time = map[string]time.Time{}
 	secret []byte = []byte("@-use-your-own-secret-@")
+	expirationTime float64 = 30.0
 )
 
 func init() {
-	go oldTokensCollector()
+	go oldTokensGarbageCollector()
+}
+
+func SetExpirationTime(e float64) {
+	expirationTime = e
 }
 
 func SetSecret(s string) {
@@ -30,15 +35,8 @@ func GenerateNewToken(payload string) <-chan string {
 	c := make(chan string)
 	go func() {
 		b64Payload := base64.RawURLEncoding.EncodeToString( []byte(payload) )
-		
-		unsignedToken := defaultTokenHeader + b64Payload
-		signature := createSignature(unsignedToken)
-		token := unsignedToken + "." + signature
-		
-		tokensRWMutex.Lock()
-		defer tokensRWMutex.Unlock()
-		tokens[token] = time.Now()
-
+		token := createToken(b64Payload)
+		insertTokenInMap(token)
 		c <- token
 	}()
 	return c
@@ -49,14 +47,22 @@ func ValidateToken(token string) <-chan bool {
 	go func() {
 		tokensRWMutex.RLock()
 		defer tokensRWMutex.RUnlock()
-		_, ok := tokens[token]
-		c <- ok
+		
+		lastTimeUsed, ok := tokens[token]
+		isTokenExpired := verifyTokenExpirated(lastTimeUsed)
+		isValid := ok && !isTokenExpired
+
+		c <- isValid
 	}()
 	return c
 }
 
-// Return:
-//   HMACSHA256(base64UrlEncode(header)+"."+base64UrlEncode(payload),your-256-bit-secret)
+func createToken(b64Payload string) string {
+	unsignedToken := defaultTokenHeader + b64Payload
+	signature := createSignature(unsignedToken)
+	return unsignedToken + "." + signature
+}
+
 func createSignature(unsignedToken string) string {
 	data := []byte(unsignedToken)
 
@@ -66,19 +72,30 @@ func createSignature(unsignedToken string) string {
 	return signature
 }
 
-func oldTokensCollector() {
+func insertTokenInMap(token string) {
+	tokensRWMutex.Lock()
+	defer tokensRWMutex.Unlock()
+	tokens[token] = time.Now()
+}
+
+func oldTokensGarbageCollector() {
 	for {
 		time.Sleep(time.Minute * 5)
 
 		tokensRWMutex.Lock()
 		for token, lastTimeUsed := range tokens {
-			duration := time.Since(lastTimeUsed)
-			if duration.Minutes() > 30 {
+			isTokenExpired := verifyTokenExpirated(lastTimeUsed)
+			if !isTokenExpired {
 				deleteOldToken(token)
 			}
 		}
 		tokensRWMutex.Unlock()
 	}
+}
+
+func verifyTokenExpirated(lastTimeUsed time.Time) bool {
+	duration := time.Since(lastTimeUsed)
+	return duration.Minutes() > expirationTime
 }
 
 func deleteOldToken(token string) {
