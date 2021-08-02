@@ -13,10 +13,10 @@ const (
 )
 
 var (
-	tokensRWMutex sync.RWMutex
-	tokens map[string]time.Time = map[string]time.Time{}
-	secret []byte = []byte("@-use-your-own-secret-@")
-	expirationTime float64 = 30.0
+	tokensRWMutex  sync.RWMutex
+	tokens         map[string]time.Time = map[string]time.Time{}
+	secret         []byte               = []byte("@-use-your-own-secret-@")
+	expirationTime float64              = 30.0
 )
 
 func init() {
@@ -33,28 +33,32 @@ func SetSecret(s string) {
 
 func GenerateNewToken(payload string) <-chan string {
 	c := make(chan string)
-	go func() {
-		b64Payload := base64.RawURLEncoding.EncodeToString( []byte(payload) )
-		token := createToken(b64Payload)
-		insertTokenInMap(token)
-		c <- token
-	}()
+	go generateNewToken(c, payload)
 	return c
 }
 
 func ValidateToken(token string) <-chan bool {
 	c := make(chan bool)
-	go func() {
-		tokensRWMutex.RLock()
-		defer tokensRWMutex.RUnlock()
-		
-		lastTimeUsed, ok := tokens[token]
-		isTokenExpired := verifyTokenExpirated(lastTimeUsed)
-		isValid := ok && !isTokenExpired
-
-		c <- isValid
-	}()
+	go validateToken(c, token)
 	return c
+}
+
+func generateNewToken(c chan string, payload string) {
+	b64Payload := base64.RawURLEncoding.EncodeToString([]byte(payload))
+	token := createToken(b64Payload)
+	insertTokenInMap(token)
+	c <- token
+}
+
+func validateToken(c chan bool, token string) {
+	tokensRWMutex.RLock()
+	defer tokensRWMutex.RUnlock()
+
+	lastTimeUsed, ok := tokens[token]
+	isTokenExpired := verifyTokenExpirated(lastTimeUsed)
+	isValid := ok && !isTokenExpired
+
+	c <- isValid
 }
 
 func createToken(b64Payload string) string {
@@ -67,8 +71,8 @@ func createSignature(unsignedToken string) string {
 	data := []byte(unsignedToken)
 
 	hash := hmac.New(sha256.New, secret)
-	hash.Write( data )
-	signature := base64.RawURLEncoding.EncodeToString( hash.Sum(nil) )
+	hash.Write(data)
+	signature := base64.RawURLEncoding.EncodeToString(hash.Sum(nil))
 	return signature
 }
 
