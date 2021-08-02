@@ -6,7 +6,7 @@ import (
 )
 
 const (
-	payload = "{\"user\":\"NalberLeal\"}"
+	payload       = "{\"user\":\"NalberLeal\"}"
 	expectedToken = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyIjoiTmFsYmVyTGVhbCJ9.VKPJCZFkw17AeXbnFnIOAMaBUlTO7yYCG2_pbVcJW_4"
 )
 
@@ -30,7 +30,7 @@ func TestValidateToken(t *testing.T) {
 
 func TestVerifyTokenExpirated(t *testing.T) {
 	token := <-GenerateNewToken(payload)
-	tokenTime :=  tokens[token]
+	tokenTime := tokens[token]
 	isExpirated := verifyTokenExpirated(tokenTime)
 	if isExpirated {
 		t.Error("Token is expirated but should't")
